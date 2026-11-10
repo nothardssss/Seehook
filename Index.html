@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SEEHOOK - Stealth Navigation</title>
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+        html, body { width: 100%; height: 100%; overflow: hidden; background-color: #060608; color: #F4F4F5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        
+        #map { position: absolute; top: 0; bottom: 0; left: 0; right: 0; width: 100%; height: 100%; z-index: 1; }
+        
+        /* Stealth Map Filters */
+        .leaflet-tile { filter: brightness(0.4) invert(1) contrast(1.6) hue-rotate(200deg) saturate(0.15) !important; }
+        .leaflet-container { background: #060608 !important; }
+        
+        /* Top Header Navigation */
+        .header-bar {
+            position: absolute; top: 0; left: 0; right: 0; z-index: 1000;
+            padding: 14px 16px; display: flex; align-items: center; justify-content: space-between;
+            background: linear-gradient(to bottom, rgba(6,6,8,0.9), transparent);
+            pointer-events: none;
+        }
+        .logo-box { display: flex; align-items: center; gap: 10px; pointer-events: auto; }
+        .logo-icon {
+            width: 36px; height: 36px; background: #FACC15; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 900; color: #000; font-size: 16px;
+            box-shadow: 0 0 15px rgba(250, 204, 21, 0.3);
+        }
+        .logo-text { font-size: 18px; font-weight: 900; color: #FFF; letter-spacing: 1px; }
+
+        /* Speed Limit Badge (Top Right) */
+        .speed-badge {
+            pointer-events: auto; background: rgba(18, 18, 20, 0.9); border: 2px solid #EF4444;
+            width: 44px; height: 44px; border-radius: 50%; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        .speed-num { font-size: 14px; font-weight: 900; color: #FFF; line-height: 1; }
+        .speed-lbl { font-size: 8px; font-weight: 700; color: #EF4444; }
+
+        /* Zoom Controls (Right) */
+        .zoom-container {
+            position: absolute; right: 16px; top: 90px; z-index: 1000;
+            background: rgba(18, 18, 20, 0.85); border: 1px solid #27272A; border-radius: 16px;
+            overflow: hidden; backdrop-filter: blur(10px); display: flex; flex-direction: column;
+        }
+        .zoom-btn { width: 40px; height: 40px; background: transparent; border: none; color: #FFF; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .zoom-btn:active { background: rgba(255,255,255,0.1); }
+
+        /* Bottom Navigation Dock (Navigator Style) */
+        .nav-dock {
+            position: absolute; bottom: 20px; left: 16px; right: 16px; z-index: 1000;
+            background: rgba(18, 18, 20, 0.92); border: 1px solid #27272A; backdrop-filter: blur(16px);
+            border-radius: 24px; padding: 10px 14px; display: flex; align-items: center; justify-content: space-around;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+        }
+        .dock-item {
+            background: transparent; border: none; display: flex; flex-direction: column; align-items: center; gap: 4px;
+            color: #A1A1AA; cursor: pointer; padding: 6px 10px; border-radius: 14px; transition: color 0.2s, background 0.2s;
+        }
+        .dock-item i { font-size: 18px; }
+        .dock-item span { font-size: 10px; font-weight: 700; }
+        .dock-item.active, .dock-item:hover { color: #FACC15; background: rgba(250, 204, 21, 0.08); }
+
+        /* Modals & Popups */
+        .modal-overlay {
+            position: fixed; inset: 0; z-index: 3000; background: rgba(0,0,0,0.85); backdrop-filter: blur(6px);
+            display: none; align-items: flex-end; justify-content: center;
+        }
+        .modal-card {
+            background: #121214; border-top: 1px solid #27272A; width: 100%; max-width: 480px;
+            border-radius: 28px 28px 0 0; padding: 24px; max-height: 80vh; overflow-y: auto;
+            box-shadow: 0 -10px 40px rgba(0,0,0,0.9); animation: slideUp 0.3s ease-out;
+        }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; border-bottom: 1px solid #27272A; padding-bottom: 12px; }
+        .modal-title { font-size: 16px; font-weight: 900; color: #FFF; }
+
+        /* Custom Leaflet Popups */
+        .custom-popup .leaflet-popup-content-wrapper {
+            background: #121214 !important; color: #fff !important; border: 1px solid #27272A;
+            border-radius: 16px; padding: 6px; box-shadow: 0 10px 25px rgba(0,0,0,0.9);
+        }
+        .custom-popup .leaflet-popup-tip { background: #121214 !important; }
+
+        /* Floating Pin Placement Mode Banner */
+        .pin-mode-banner {
+            position: absolute; top: 75px; left: 16px; right: 16px; z-index: 2000;
+            background: rgba(250, 204, 21, 0.95); color: #000; padding: 12px 16px; border-radius: 16px;
+            font-weight: 800; font-size: 13px; display: none; align-items: center; justify-content: space-between;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <div class="header-bar">
+        <div class="logo-box">
+            <div class="logo-icon">SH</div>
+            <div class="logo-text">SEEHOOK</div>
+        </div>
+        <div class="speed-badge">
+            <span class="speed-num">60</span>
+            <span class="speed-lbl">KM/H</span>
+        </div>
+    </div>
+
+    <!-- Zoom Buttons -->
+    <div class="zoom-container">
+        <button class="zoom-btn" onclick="map.zoomIn()"><i class="fa-solid fa-plus"></i></button>
+        <div style="height: 1px; background: #27272A;"></div>
+        <button class="zoom-btn" onclick="map.zoomOut()"><i class="fa-solid fa-minus"></i></button>
+    </div>
+
+    <!-- Map Container -->
+    <div id="map"></div>
+
+    <!-- Pin Placement Guidance Banner -->
+    <div class="pin-mode-banner" id="pin-banner">
+        <span><i class="fa-solid fa-crosshairs"></i> Перетащите карту под маркер</span>
+        <button onclick="confirmPinPlacement()" style="background: #000; color: #FACC15; border: none; padding: 6px 12px; border-radius: 8px; font-weight: 900; cursor: pointer;">Готово</button>
+    </div>
+
+    <!-- Bottom Navigation Dock -->
+    <div class="nav-dock">
+        <button class="dock-item" onclick="openModal('profile-modal')">
+            <i class="fa-solid fa-user-secret"></i>
+            <span>Профиль</span>
+        </button>
+        <button class="dock-item" onclick="openPostsModal()">
+            <i class="fa-solid fa-shield-halved"></i>
+            <span>Посты</span>
+        </button>
+        <button class="dock-item" onclick="openFuelModal()">
+            <i class="fa-solid fa-gas-pump"></i>
+            <span>Заправка</span>
+        </button>
+        <button class="dock-item" onclick="openModal('settings-modal')">
+            <i class="fa-solid fa-gear"></i>
+            <span>Настройки</span>
+        </button>
+    </div>
+
+    <!-- 1. Profile Modal -->
+    <div class="modal-overlay" id="profile-modal" onclick="closeModalOnBg(event, 'profile-modal')">
+        <div class="modal-card">
+            <div class="modal-header">
+                <span class="modal-title">Анонимный Профиль</span>
+                <button onclick="closeModal('profile-modal')" style="background:none; border:none; color:#A1A1AA; font-size:20px; cursor:pointer;">&times;</button>
+            </div>
+            <div style="background: #0A0A0B; border: 1px solid #27272A; border-radius: 16px; padding: 16px; margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <span style="color: #A1A1AA;">Уровень доступа:</span>
+                    <span style="color: #FACC15; font-weight: 900;" id="prof-lvl">LVL 1 (Free)</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #A1A1AA;">Лимит меток:</span>
+                    <span style="color: #FFF; font-weight: 700;">2 фиксации / 30 мин</span>
+                </div>
+            </div>
+            <button onclick="activatePro()" style="width: 100%; background: #FACC15; border: none; color: #000; font-weight: 900; padding: 14px; border-radius: 14px; cursor: pointer; font-size: 13px; text-transform: uppercase;">
+                Активировать PRO (Скидка до 30%)
+            </button>
+        </div>
+    </div>
+
+    <!-- 2. Posts (Nearby 2-3km) Modal -->
+    <div class="modal-overlay" id="posts-modal" onclick="closeModalOnBg(event, 'posts-modal')">
+        <div class="modal-card">
+            <div class="modal-header">
+                <span class="modal-title">Ближайшие посты (до 3 км)</span>
+                <button onclick="closeModal('posts-modal')" style="background:none; border:none; color:#A1A1AA; font-size:20px; cursor:pointer;">&times;</button>
+            </div>
+            <div id="posts-list" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;">
+                <!-- Dynamically filled -->
+            </div>
+            <button onclick="startPlacingPin('cops')" style="width: 100%; background: #3B82F6; border: none; color: #FFF; font-weight: 900; padding: 14px; border-radius: 14px; cursor: pointer; font-size: 13px;">
+                + Поставить метку (PRO)
+            </button>
+        </div>
+    </div>
+
+    <!-- 3. Fuel Modal -->
+    <div class="modal-overlay" id="fuel-modal" onclick="closeModalOnBg(event, 'fuel-modal')">
+        <div class="modal-card">
+            <div class="modal-header">
+                <span class="modal-title">Топливные точки & Режим</span>
+                <button onclick="closeModal('fuel-modal')" style="background:none; border:none; color:#A1A1AA; font-size:20px; cursor:pointer;">&times;</button>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;">
+                <div style="background: #0A0A0B; border: 1px solid #27272A; padding: 14px; border-radius: 14px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-weight: 800; color: #FACC15; font-size: 14px;">АЗС Сеть Центр</div>
+                        <div style="font-size: 11px; color: #A1A1AA; margin-top: 2px;">92 ✓ | 98 ✓ | 100 ✓ (1.2 км)</div>
+                    </div>
+                    <span style="background: rgba(16,185,129,0.15); color: #10B981; padding: 4px 8px; border-radius: 6px; font-size: 10px; font-weight: 800;">Открыто</span>
+                </div>
+            </div>
+            <button onclick="startPlacingPin('fuel')" style="width: 100%; background: #FACC15; border: none; color: #000; font-weight: 900; padding: 14px; border-radius: 14px; cursor: pointer; font-size: 13px;">
+                + Добавить АЗС
+            </button>
+        </div>
+    </div>
+
+    <!-- 4. Settings Modal -->
+    <div class="modal-overlay" id="settings-modal" onclick="closeModalOnBg(event, 'settings-modal')">
+        <div class="modal-card">
+            <div class="modal-header">
+                <span class="modal-title">Настройки Навигатора</span>
+                <button onclick="closeModal('settings-modal')" style="background:none; border:none; color:#A1A1AA; font-size:20px; cursor:pointer;">&times;</button>
+            </div>
+            
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+                <!-- Volume Control -->
+                <div>
+                    <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px;">
+                        <span style="color: #A1A1AA;"><i class="fa-solid fa-volume-high"></i> Громкость сирены:</span>
+                        <span id="vol-val" style="color: #FACC15; font-weight: 800;">70%</span>
+                    </div>
+                    <input type="range" min="0" max="100" value="70" style="width: 100%; accent-color: #FACC15;" oninput="updateVolume(this.value)">
+                </div>
+
+                <!-- GPS Sharing -->
+                <div style="display: flex; justify-content: space-between; align-items: center; background: #0A0A0B; border: 1px solid #27272A; padding: 12px 14px; border-radius: 14px;">
+                    <div>
+                        <div style="font-size: 13px; font-weight: 800; color: #FFF;">Делиться геопозицией</div>
+                        <div style="font-size: 10px; color: #71717A;">Анонимный обмен с комьюнити</div>
+                    </div>
+                    <input type="checkbox" id="gps-toggle" checked style="width: 18px; height: 18px; accent-color: #FACC15;" onclick="testSiren()">
+                </div>
+
+                <!-- Traffic Layer / Jams -->
+                <div style="display: flex; justify-content: space-between; align-items: center; background: #0A0A0B; border: 1px solid #27272A; padding: 12px 14px; border-radius: 14px;">
+                    <div>
+                        <div style="font-size: 13px; font-weight: 800; color: #FFF;">Слой пробок и заторов</div>
+                        <div style="font-size: 10px; color: #71717A;">Отображение загруженности дорог</div>
+                    </div>
+                    <input type="checkbox" id="traffic-toggle" checked style="width: 18px; height: 18px; accent-color: #FACC15;" onchange="toggleTrafficLayer(this.checked)">
+                </div>
+
+                <!-- Simple Graphics Mode -->
+                <div style="display: flex; justify-content: space-between; align-items: center; background: #0A0A0B; border: 1px solid #27272A; padding: 12px 14px; border-radius: 14px;">
+                    <div>
+                        <div style="font-size: 13px; font-weight: 800; color: #FFF;">Упрощенная графика</div>
+                        <div style="font-size: 10px; color: #71717A;">Экономия батареи и плавная карта</div>
+                    </div>
+                    <input type="checkbox" style="width: 18px; height: 18px; accent-color: #FACC15;" onchange="toggleLiteGraphics(this.checked)">
+                </div>
+            </div>
+            
+            <button onclick="closeModal('settings-modal')" style="width: 100%; margin-top: 18px; background: #27272A; border: none; color: #FFF; font-weight: 800; padding: 12px; border-radius: 14px; cursor: pointer;">
+                Сохранить
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let isPro = false;
+        let soundVolume = 0.7;
+        let placingMode = false;
+        let placingType = 'cops';
+
+        const map = L.map('map', { zoomControl: false }).setView([55.751244, 37.618423], 14);
+
+        const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© SEEHOOK'
+        }).addTo(map);
+
+        // Mock Data points
+        const points = [
+            { id: 1, type: 'cops', lat: 55.7558, lng: 37.6173, title: 'Экипаж / Фиксация', dist: '1.2 км', time: '5 мин назад' },
+            { id: 2, type: 'fuel', lat: 55.7480, lng: 37.6270, title: 'АЗС Центр', dist: '2.1 км' },
+            { id: 3, type: 'cops', lat: 55.7420, lng: 37.6050, title: 'Камера скорости', dist: '2.8 км', time: '12 мин назад' }
+        ];
+
+        function renderPoints() {
+            points.forEach(pt => {
+                let color = pt.type === 'cops' ? '#3B82F6' : '#FACC15';
+                let iconHtml = `<div style="background: #121214; border: 2px solid ${color}; color: ${color}; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; box-shadow: 0 0 12px ${color}88;"><i class="fa-solid ${pt.type === 'cops' ? 'fa-car-side' : 'fa-gas-pump'}"></i></div>`;
+                
+                let icon = L.divIcon({ className: 'custom-icon', html: iconHtml, iconSize: [34, 34], iconAnchor: [17, 17] });
+                L.marker([pt.lat, pt.lng], { icon: icon }).addTo(map)
+                    .bindPopup(`<div style="font-weight:900; color:${color};">${pt.title}</div><div style="font-size:11px; color:#A1A1AA; margin-top:2px;">Дистанция: ${pt.dist}</div>`, { className: 'custom-popup' });
+            });
+        }
+        renderPoints();
+
+        // GTA San Andreas 1-Star Wanted Siren Generator (Web Audio API)
+        function playGtaSiren() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                if (!ctx) return;
+
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+
+                osc.type = 'sawtooth';
+                // Rapid police siren frequency sweep (high-low wail)
+                const now = ctx.currentTime;
+                osc.frequency.setValueAtTime(550, now);
+                osc.frequency.linearRampToValueAtTime(880, now + 0.3);
+                osc.frequency.linearRampToValueAtTime(550, now + 0.6);
+                osc.frequency.linearRampToValueAtTime(880, now + 0.9);
+                osc.frequency.linearRampToValueAtTime(550, now + 1.2);
+
+                gain.gain.setValueAtTime(soundVolume * 0.25, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 1.3);
+
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+
+                osc.start(now);
+                osc.stop(now + 1.3);
+            } catch (e) {
+                console.log("Audio error", e);
+            }
+        }
+
+        function testSiren() {
+            playGtaSiren();
+        }
+
+        function updateVolume(val) {
+            soundVolume = val / 100;
+            document.getElementById('vol-val').innerText = `${val}%`;
+            if (val > 0) playGtaSiren();
+        }
+
+        // Modals control
+        function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+        function closeModalOnBg(e, id) { if (e.target.id === id) closeModal(id); }
+
+        function openPostsModal() {
+            const list = document.getElementById('posts-list');
+            list.innerHTML = '';
+            points.filter(p => p.type === 'cops').forEach(p => {
+                list.innerHTML += `
+                    <div style="background: #0A0A0B; border: 1px solid #27272A; padding: 12px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-weight: 800; font-size: 13px; color: #3B82F6;">🚔 ${p.title}</div>
+                            <div style="font-size: 11px; color: #A1A1AA; margin-top: 2px;">Радиус: ${p.dist} • ${p.time}</div>
+                        </div>
+                        <button onclick="playGtaSiren(); alert('Сирена протестирована!');" style="background: rgba(59,130,246,0.15); border: 1px solid #3B82F6; color: #60A5FA; padding: 6px 10px; border-radius: 8px; font-size: 11px; font-weight: 800; cursor: pointer;">🔊 Сирена</button>
+                    </div>
+                `;
+            });
+            openModal('posts-modal');
+        }
+
+        function openFuelModal() { openModal('fuel-modal'); }
+
+        function activatePro() {
+            isPro = true;
+            document.getElementById('prof-lvl').innerText = 'LVL 5 (PRO Active)';
+            closeModal('profile-modal');
+            alert('PRO-доступ успешно активирован! Скидка 30% применена.');
+        }
+
+        // Pin Placement Mode (Drag map to set exact coordinate)
+        function startPlacingPin(type) {
+            if (!isPro) {
+                closeModal('posts-modal');
+                closeModal('fuel-modal');
+                openModal('profile-modal');
+                alert('Постановка меток доступна только с PRO-доступом!');
+                return;
+            }
+            placingType = type;
+            closeModal('posts-modal');
+            closeModal('fuel-modal');
+            document.getElementById('pin-banner').style.display = 'flex';
+        }
+
+        function confirmPinPlacement() {
+            document.getElementById('pin-banner').style.display = 'none';
+            const center = map.getCenter();
+            points.push({ id: Date.now(), type: placingType, lat: center.lat, lng: center.lng, title: placingType === 'cops' ? 'Новый пост' : 'Новая АЗС', dist: '0.1 км', time: 'Только что' });
+            renderPoints();
+            playGtaSiren();
+            alert('Метка успешно зафиксирована на карте!');
+        }
+
+        function toggleTrafficLayer(enabled) {
+            if (enabled) {
+                map.addLayer(tileLayer);
+            } else {
+                // simple grayscale filter effect
+                document.querySelector('.leaflet-tile-pane').style.filter = 'grayscale(100%)';
+            }
+        }
+
+        function toggleLiteGraphics(enabled) {
+            if (enabled) {
+                document.querySelectorAll('.leaflet-tile').forEach(t => t.style.filter = 'brightness(0.3) contrast(1.2)');
+            } else {
+                document.querySelectorAll('.leaflet-tile').forEach(t => t.style.filter = '');
+            }
+        }
+    </script>
+</body>
+</html>
